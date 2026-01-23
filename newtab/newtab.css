@@ -1,0 +1,280 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: #1a1a2e;
+  color: #eee;
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+h1 {
+  font-size: 2rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.header-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.view-toggle {
+  display: flex;
+  background: #252542;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.toggle-btn {
+  background: transparent;
+  border: none;
+  color: #888;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+  color: #ccc;
+}
+
+.toggle-btn.active {
+  background: #3a3a5c;
+  color: #fff;
+}
+
+.stats {
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.tab-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Window group header */
+.window-group {
+  margin-bottom: 1.5rem;
+}
+
+.window-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid #3a3a5c;
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.window-header-icon {
+  font-size: 1rem;
+}
+
+.window-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  background: #252542;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+  border-left: 4px solid transparent;
+}
+
+.tab-item:hover {
+  transform: translateX(4px);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.tab-item.active-tab {
+  border-left-color: #b19cd9;
+  background: #3d3d5c;
+  box-shadow: 0 0 12px rgba(177, 156, 217, 0.3);
+}
+
+.tab-item.dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+}
+
+.tab-item.drag-over-top {
+  border-top: 2px solid #6c8aff;
+  margin-top: -2px;
+}
+
+.tab-item.drag-over-bottom {
+  border-bottom: 2px solid #6c8aff;
+  margin-bottom: -2px;
+}
+
+.drop-indicator {
+  height: 2px;
+  background: #6c8aff;
+  border-radius: 1px;
+  margin: -1px 0;
+  display: none;
+}
+
+.drop-indicator.visible {
+  display: block;
+}
+
+.tab-favicon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 3px;
+}
+
+.tab-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.tab-title {
+  font-size: 0.95rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 0.2rem;
+}
+
+.tab-url {
+  font-size: 0.75rem;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-age {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 12px;
+  white-space: nowrap;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+/* Age color classes - gradient from dark red (old) to light pink (recent) */
+.age-ancient {
+  background: #8B0000;
+  color: #fff;
+}
+
+.age-very-old {
+  background: #A52A2A;
+  color: #fff;
+}
+
+.age-old {
+  background: #CD5C5C;
+  color: #fff;
+}
+
+.age-moderate {
+  background: #E57373;
+  color: #fff;
+}
+
+.age-recent {
+  background: #F08080;
+  color: #1a1a2e;
+}
+
+.age-fresh {
+  background: #FFB6C1;
+  color: #1a1a2e;
+}
+
+.age-new {
+  background: #FFC0CB;
+  color: #1a1a2e;
+}
+
+.age-current {
+  background: #FFF0F5;
+  color: #1a1a2e;
+}
+
+.delete-btn {
+  background: transparent;
+  border: none;
+  color: #666;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.delete-btn:hover {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.1);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: #666;
+}
+
+.empty-state h2 {
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Animation for removing tabs */
+.tab-item.removing {
+  animation: slideOut 0.3s ease forwards;
+}
+
+@keyframes slideOut {
+  to {
+    opacity: 0;
+    transform: translateX(100px);
+    height: 0;
+    padding: 0;
+    margin: 0;
+  }
+}
+
+/* Loading state */
+.loading {
+  text-align: center;
+  padding: 4rem;
+  color: #666;
+}

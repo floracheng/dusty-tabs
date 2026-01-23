@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tab Organizer</title>
+  <link rel="stylesheet" href="newtab.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1><img src="../icons/icon-48.png" alt="" style="width: 32px; height: 32px; vertical-align: middle; margin-right: 8px;">Dusty Tabs</h1>
+      <div class="header-controls">
+        <div class="view-toggle">
+          <button id="view-recency" class="toggle-btn active">By Recency</button>
+          <button id="view-window" class="toggle-btn">By Window</button>
+        </div>
+        <span id="tab-count" class="stats">0 tabs</span>
+      </div>
+    </header>
+    
+    <main id="tab-list" class="tab-list">
+      <!-- Tabs will be populated here -->
+    </main>
+  </div>
+  
+  <script src="newtab.js"></script>
+</body>
+</html>

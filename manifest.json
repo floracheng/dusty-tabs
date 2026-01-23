@@ -1,0 +1,34 @@
+{
+  "manifest_version": 2,
+  "name": "Dusty Tabs",
+  "version": "1.0.0",
+  "description": "Surface forgotten tabs and organize by recency or window. See which tabs are collecting dust.",
+ 
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "@dusty-tabs.flora-cheng",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
+  
+  "permissions": [
+    "tabs",
+    "storage"
+  ],
+  
+  "chrome_url_overrides": {
+    "newtab": "newtab/newtab.html"
+  },
+  
+  "background": {
+    "scripts": ["background/background.js"],
+    "persistent": false
+  },
+  
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png"
+  }
+}
