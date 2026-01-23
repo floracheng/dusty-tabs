@@ -18,6 +18,9 @@ let draggedTab = null;
 let draggedTabData = null;
 let isInternalMove = false;
 
+// Window number mapping (windowId -> "Window 1", "Window 2", etc.)
+let windowNumberMap = new Map();
+
 function getAgeInfo(timestamp) {
   if (!timestamp) {
     return { className: '', label: '' };
@@ -91,7 +94,7 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function createTabElement(tab, timestamp, isActive = false, draggable = false) {
+function createTabElement(tab, timestamp, isActive = false, draggable = false, windowLabel = null) {
   const ageInfo = getAgeInfo(timestamp);
   
   const tabEl = document.createElement('div');
@@ -104,15 +107,19 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false) {
     tabEl.draggable = true;
   }
   
-  tabEl.innerHTML = `
-    <img class="tab-favicon" src="${escapeHtml(getFaviconUrl(tab))}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22%23666%22><rect width=%2224%22 height=%2224%22 rx=%224%22/></svg>'">
-    <div class="tab-info">
-      <div class="tab-title">${escapeHtml(tab.title || 'Untitled')}</div>
-      <div class="tab-url">${escapeHtml(tab.url || '')}</div>
-    </div>
-    <span class="tab-age ${ageInfo.className}">${ageInfo.label || ''}</span>
-    <button class="delete-btn" title="Close tab">✕</button>
-  `;
+   // Build window label HTML if provided (for recency view)
+   const windowLabelHtml = windowLabel ? `<span class="tab-window-label">${windowLabel}</span>` : '';
+
+   tabEl.innerHTML = `
+     <img class="tab-favicon" src="${escapeHtml(getFaviconUrl(tab))}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22%23666%22><rect width=%2224%22 height=%2224%22 rx=%224%22/></svg>'">
+     <div class="tab-info">
+       <div class="tab-title">${escapeHtml(tab.title || 'Untitled')}</div>
+       <div class="tab-url">${escapeHtml(tab.url || '')}</div>
+     </div>
+     ${windowLabelHtml}
+     <span class="tab-age ${ageInfo.className}">${ageInfo.label || ''}</span>
+     <button class="delete-btn" title="Close tab">✕</button>
+   `;
   
   // Click on tab to switch to it
   tabEl.addEventListener('click', async (e) => {
@@ -201,11 +208,12 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false) {
     
     tabEl.addEventListener('drop', async (e) => {
       e.preventDefault();
-      tabEl.classList.remove('drag-over-top');
+      tabEl.classList.remove('drag-over');
       tabEl.classList.remove('drag-over-bottom');
       
       if (!draggedTab || draggedTab === tabEl) return;
       
+      const targetTabId = parseInt(tabEl.dataset.tabId);
       const targetWindowId = parseInt(tabEl.dataset.windowId);
       const targetIndex = parseInt(tabEl.dataset.index);
       const sourceTabId = parseInt(draggedTab.dataset.tabId);
@@ -228,18 +236,35 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false) {
         }
         
         // Move in DOM first (no refresh)
-        const windowTabs = tabEl.closest('.window-tabs');
+        const targetWindowTabs = tabEl.closest('.window-tabs');
+        const sourceWindowTabs = draggedTab.closest('.window-tabs');
+        
         if (insertAfter) {
           tabEl.after(draggedTab);
         } else {
           tabEl.before(draggedTab);
         }
         
-        // Update data attributes for all tabs in this window
-        const tabs = windowTabs.querySelectorAll('.tab-item');
-        tabs.forEach((tab, idx) => {
-          tab.dataset.index = idx;
+        // Update data attributes for target window
+        const targetTabs = targetWindowTabs.querySelectorAll('.tab-item');
+        targetTabs.forEach((t, idx) => {
+          t.dataset.index = idx;
         });
+        
+        // If cross-window move, update source window too and handle empty window
+        if (sourceWindowId !== targetWindowId && sourceWindowTabs) {
+          const sourceTabs = sourceWindowTabs.querySelectorAll('.tab-item');
+          if (sourceTabs.length === 0) {
+            // Remove empty window group
+            sourceWindowTabs.closest('.window-group').remove();
+          } else {
+            sourceTabs.forEach((t, idx) => {
+              t.dataset.index = idx;
+            });
+          }
+          // Update dragged tab's window ID
+          draggedTab.dataset.windowId = targetWindowId;
+        }
         
         // Move the tab in Firefox
         isInternalMove = true;
@@ -312,7 +337,7 @@ async function loadTabs() {
     tabListEl.innerHTML = '';
     
     if (currentView === 'recency') {
-      renderRecencyView(tabsWithTimestamps);
+      await renderRecencyView(tabsWithTimestamps);
     } else {
       await renderWindowView(tabsWithTimestamps);
     }
@@ -330,12 +355,37 @@ async function loadTabs() {
   }
 }
 
-function renderRecencyView(tabsWithTimestamps) {
+async function renderRecencyView(tabsWithTimestamps) {
+  // Build window number map first
+  windowNumberMap.clear();
+  const windowIds = [...new Set(tabsWithTimestamps.map(t => t.tab.windowId))];
+  
+  // Get current window to show first
+  let currentWindowId;
+  try {
+    const currentWindow = await browser.windows.getCurrent();
+    currentWindowId = currentWindow.id;
+  } catch (e) {
+    currentWindowId = null;
+  }
+  
+  // Sort window IDs so current window is first
+  windowIds.sort((a, b) => {
+    if (a === currentWindowId) return -1;
+    if (b === currentWindowId) return 1;
+    return a - b;
+  });
+  
+  windowIds.forEach((id, idx) => {
+    windowNumberMap.set(id, `Window ${idx + 1}`);
+  });
+  
   // Sort by timestamp descending (most recent first)
   tabsWithTimestamps.sort((a, b) => b.timestamp - a.timestamp);
   
   for (const { tab, timestamp } of tabsWithTimestamps) {
-    const tabEl = createTabElement(tab, timestamp, false, false);
+    const windowLabel = windowNumberMap.get(tab.windowId);
+    const tabEl = createTabElement(tab, timestamp, false, false, windowLabel);
     tabListEl.appendChild(tabEl);
   }
 }

@@ -188,6 +188,16 @@ h1 {
   flex-shrink: 0;
 }
 
+.tab-window-label {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: #3a3a5c;
+  color: #aaa;
+}
+
 /* Age color classes - gradient from dark red (old) to light pink (recent) */
 .age-ancient {
   background: #8B0000;
