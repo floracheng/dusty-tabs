@@ -19,6 +19,10 @@ let draggedTabData = null;
 let draggedGroup = null;
 let isInternalMove = false;
 
+// Loading state to prevent concurrent loadTabs calls
+let isLoading = false;
+let pendingLoad = false;
+
 // Drag-hold state for creating groups
 let dragHoldTimer = null;
 let dragHoldTarget = null;
@@ -123,7 +127,7 @@ function escapeHtml(text) {
 async function createTabGroup(tabIds, title) {
   if (!tabGroupsSupported) return null;
   try {
-    const groupId = await browser.tabGroups.create({ tabIds });
+    const groupId = await browser.tabs.group({ tabIds });
     if (title) {
       await browser.tabGroups.update(groupId, { title });
     }
@@ -137,7 +141,7 @@ async function createTabGroup(tabIds, title) {
 async function addTabToGroup(tabId, groupId) {
   if (!tabGroupsSupported) return;
   try {
-    await browser.tabGroups.update(groupId, { addTabIds: [tabId] });
+    await browser.tabs.group({ tabIds: [tabId], groupId });
   } catch (err) {
     console.error('Failed to add tab to group:', err);
   }
@@ -146,7 +150,7 @@ async function addTabToGroup(tabId, groupId) {
 async function removeTabFromGroup(tabId) {
   if (!tabGroupsSupported) return;
   try {
-    await browser.tabs.ungroup(tabId);
+    await browser.tabs.ungroup([tabId]);
   } catch (err) {
     console.error('Failed to ungroup tab:', err);
   }
@@ -208,9 +212,27 @@ function showColorPicker(groupId, currentColor, anchorEl) {
     const colorBtn = e.target.closest('.color-option');
     if (colorBtn) {
       const newColor = colorBtn.dataset.color;
+      const newColorValue = getGroupColorValue(newColor);
+
+      // Update Firefox
       await changeTabGroupColor(groupId, newColor);
+
+      // Update UI in-place
+      const groupContainer = document.querySelector(`.tab-group-container[data-group-id="${groupId}"]`);
+      if (groupContainer) {
+        const header = groupContainer.querySelector('.tab-group-header');
+        const colorButton = groupContainer.querySelector('.tab-group-color');
+        const tabsContainer = groupContainer.querySelector('.tab-group-tabs');
+
+        if (header) header.style.borderLeftColor = newColorValue;
+        if (colorButton) {
+          colorButton.style.background = newColorValue;
+          colorButton.dataset.color = newColor;
+        }
+        if (tabsContainer) tabsContainer.style.borderLeftColor = newColorValue;
+      }
+
       picker.remove();
-      loadTabs();
     }
   });
 
@@ -251,6 +273,9 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false, w
    // Build window label HTML if provided (for recency view)
    const windowLabelHtml = windowLabel ? `<span class="tab-window-label">${windowLabel}</span>` : '';
 
+   // Only show age label if there's a timestamp
+   const ageLabelHtml = ageInfo.label ? `<span class="tab-age ${ageInfo.className}">${ageInfo.label}</span>` : '';
+
    tabEl.innerHTML = `
      <img class="tab-favicon" src="${escapeHtml(getFaviconUrl(tab))}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22%23666%22><rect width=%2224%22 height=%2224%22 rx=%224%22/></svg>'">
      <div class="tab-info">
@@ -258,7 +283,7 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false, w
        <div class="tab-url">${escapeHtml(tab.url || '')}</div>
      </div>
      ${windowLabelHtml}
-     <span class="tab-age ${ageInfo.className}">${ageInfo.label || ''}</span>
+     ${ageLabelHtml}
      <button class="delete-btn" title="Close tab">✕</button>
    `;
   
@@ -393,7 +418,12 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false, w
       }
     });
 
-    tabEl.addEventListener('dragleave', () => {
+    tabEl.addEventListener('dragleave', (e) => {
+      // Only handle if actually leaving the element (not just moving to a child)
+      if (tabEl.contains(e.relatedTarget)) {
+        return;
+      }
+
       tabEl.classList.remove('drag-over-top');
       tabEl.classList.remove('drag-over-bottom');
 
@@ -412,6 +442,11 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false, w
     
     tabEl.addEventListener('drop', async (e) => {
       e.preventDefault();
+      e.stopPropagation();
+
+      // Check if drag-hold was active BEFORE removing classes
+      const wasHoldActive = dragHoldTarget === tabEl && tabEl.classList.contains('drag-hold-active');
+
       tabEl.classList.remove('drag-over-top');
       tabEl.classList.remove('drag-over-bottom');
       tabEl.classList.remove('drag-hold-active');
@@ -419,6 +454,21 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false, w
       // Remove tooltip
       const tooltip = document.querySelector('.drag-hold-tooltip');
       if (tooltip) tooltip.remove();
+
+      // Handle group drop on tab
+      if (draggedGroup) {
+        const groupId = parseInt(draggedGroup.dataset.groupId);
+        const targetWindowId = parseInt(tabEl.dataset.windowId);
+        const targetIndex = parseInt(tabEl.dataset.index);
+        try {
+          await moveTabGroup(groupId, targetWindowId, targetIndex);
+          loadTabs();
+        } catch (err) {
+          console.error('Failed to move group:', err);
+          loadTabs();
+        }
+        return;
+      }
 
       if (!draggedTab || draggedTab === tabEl) return;
 
@@ -433,9 +483,6 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false, w
       const rect = tabEl.getBoundingClientRect();
       const midY = rect.top + rect.height / 2;
       const insertAfter = e.clientY >= midY;
-
-      // Check if drag-hold was active (creating a new group)
-      const wasHoldActive = dragHoldTarget === tabEl && tabEl.classList.contains('drag-hold-active');
 
       // Clear drag-hold state
       if (dragHoldTimer) {
@@ -543,27 +590,39 @@ function updateTabCount() {
   }
 }
 
-async function loadTabs() {
+async function loadTabs(preserveScroll = true) {
+  // Prevent concurrent loads - queue a reload if already loading
+  if (isLoading) {
+    pendingLoad = true;
+    return;
+  }
+
+  isLoading = true;
+  pendingLoad = false;
+
+  // Save scroll position before reload
+  const scrollY = preserveScroll ? window.scrollY : 0;
+
   tabListEl.innerHTML = '<div class="loading">Loading tabs...</div>';
-  
+
   try {
     const [tabs, storageData] = await Promise.all([
       browser.tabs.query({}),
       browser.storage.local.get(['tabTimestamps', 'viewPreference'])
     ]);
-    
+
     const timestamps = storageData.tabTimestamps || {};
-    
+
     // Restore view preference
     if (storageData.viewPreference && storageData.viewPreference !== currentView) {
       currentView = storageData.viewPreference;
       updateToggleButtons();
     }
-    
+
     // Filter out pinned tabs and current new tab page
     const currentTab = await browser.tabs.getCurrent();
     const filteredTabs = tabs.filter(tab => tab.id !== currentTab?.id && !tab.pinned);
-    
+
     if (filteredTabs.length === 0) {
       tabListEl.innerHTML = `
         <div class="empty-state">
@@ -574,23 +633,30 @@ async function loadTabs() {
       tabCountEl.textContent = '0 tabs';
       return;
     }
-    
+
     // Add timestamps to tabs
     const tabsWithTimestamps = filteredTabs.map(tab => ({
       tab,
       timestamp: timestamps[tab.id] ?? 0
     }));
-    
+
     tabListEl.innerHTML = '';
-    
+
     if (currentView === 'recency') {
       await renderRecencyView(tabsWithTimestamps);
     } else {
       await renderWindowView(tabsWithTimestamps);
     }
-    
+
     updateTabCount();
-    
+
+    // Restore scroll position after DOM is fully rendered
+    if (preserveScroll && scrollY > 0) {
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollY);
+      });
+    }
+
   } catch (err) {
     console.error('Failed to load tabs:', err);
     tabListEl.innerHTML = `
@@ -599,6 +665,13 @@ async function loadTabs() {
         <p>${escapeHtml(err.message)}</p>
       </div>
     `;
+  } finally {
+    isLoading = false;
+
+    // If a load was requested while we were loading, do it now
+    if (pendingLoad) {
+      loadTabs(preserveScroll);
+    }
   }
 }
 
@@ -710,10 +783,16 @@ async function renderWindowView(tabsWithTimestamps) {
     });
 
     windowTabsEl.addEventListener('drop', async (e) => {
-      // Only handle drops directly on the container, not bubbled from tab items
-      if (e.target !== windowTabsEl) return;
+      // Handle drops on the container or on group containers (but not on tabs or group-tabs)
+      const isOnWindowTabs = e.target === windowTabsEl;
+      const isOnGroupContainer = e.target.classList.contains('tab-group-container');
+      const isOnGroupHeader = e.target.closest('.tab-group-header') && !e.target.closest('.tab-group-tabs');
+
+      // Skip if drop is on a tab item or inside group tabs (those have their own handlers)
+      if (!isOnWindowTabs && !isOnGroupContainer && !isOnGroupHeader) return;
 
       e.preventDefault();
+      e.stopPropagation();
 
       if (!draggedTab && !draggedGroup) return;
 
@@ -804,7 +883,7 @@ function createTabGroupElement(groupInfo, windowId) {
       <span class="tab-group-name" title="Click to rename">${escapeHtml(title)}</span>
       <span class="tab-group-count"></span>
     </div>
-    <div class="tab-group-tabs"></div>
+    <div class="tab-group-tabs" style="border-left-color: ${colorValue}"></div>
   `;
 
   // Make group header draggable
@@ -820,6 +899,20 @@ function createTabGroupElement(groupInfo, windowId) {
   headerEl.addEventListener('dragend', () => {
     groupEl.classList.remove('dragging');
     draggedGroup = null;
+
+    // Clear any stale drag-hold state
+    if (dragHoldTimer) {
+      clearTimeout(dragHoldTimer);
+      dragHoldTimer = null;
+    }
+    if (dragHoldTarget) {
+      dragHoldTarget.classList.remove('drag-hold-active');
+      dragHoldTarget = null;
+    }
+    document.querySelectorAll('.drag-hold-tooltip').forEach(el => el.remove());
+    document.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(el => {
+      el.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
   });
 
   // Click on color to change
@@ -857,6 +950,7 @@ function createTabGroupElement(groupInfo, windowId) {
 
   groupTabsEl.addEventListener('drop', async (e) => {
     e.preventDefault();
+    e.stopPropagation();
     groupEl.classList.remove('drag-over-group');
 
     // Only handle drops directly on the group tabs container
@@ -920,8 +1014,8 @@ async function setView(view) {
 viewRecencyBtn.addEventListener('click', () => setView('recency'));
 viewWindowBtn.addEventListener('click', () => setView('window'));
 
-// Initial load
-loadTabs();
+// Initial load (don't preserve scroll on first load)
+loadTabs(false);
 
 // Listen for tab changes to refresh the list
 browser.tabs.onRemoved.addListener((removedTabId) => {
