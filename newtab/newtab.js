@@ -118,10 +118,14 @@ function getFaviconUrl(tab) {
 }
 
 // Tab Group helper functions
-async function createTabGroup(tabIds, title) {
+async function createTabGroup(tabIds, title, windowId) {
   if (!tabGroupsSupported) return null;
   try {
-    const groupId = await browser.tabs.group({ tabIds });
+    const options = { tabIds };
+    if (windowId !== undefined) {
+      options.createProperties = { windowId };
+    }
+    const groupId = await browser.tabs.group(options);
     if (title) {
       await browser.tabGroups.update(groupId, { title });
     }
@@ -519,7 +523,7 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false, w
           const groupName = await promptForGroupName('New Group');
           if (groupName !== null) {
             // Create group with both tabs
-            await createTabGroup([targetTabId, sourceTabId], groupName);
+            await createTabGroup([targetTabId, sourceTabId], groupName, targetWindowId);
             loadTabs();
             return;
           }
