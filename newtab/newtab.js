@@ -117,12 +117,6 @@ function getFaviconUrl(tab) {
   return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23666"><rect width="24" height="24" rx="4"/></svg>';
 }
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
 // Tab Group helper functions
 async function createTabGroup(tabIds, title) {
   if (!tabGroupsSupported) return null;
@@ -196,12 +190,14 @@ function showColorPicker(groupId, currentColor, anchorEl) {
   picker.className = 'color-picker-popup';
 
   // injected variables are all known hardcoded strings, safe to use
-  picker.innerHTML = TAB_GROUP_COLORS.map(color => `
-    <button class="color-option ${color === currentColor ? 'selected' : ''}"
-            data-color="${color}"
-            style="background: ${TAB_GROUP_COLOR_VALUES[color]}"
-            title="${color}"></button>
-  `).join('');
+  picker.append(TAB_GROUP_COLORS.map(color => {
+    const colorBtn = document.createElement("button")
+    colorBtn.className = "color-option ${color === currentColor ? 'selected' : ''}";
+    colorBtn.dataset.color = color;
+    colorBtn.style.background = TAB_GROUP_COLOR_VALUES[color];
+    colorBtn.title = color;
+    return colorBtn;
+  }));
 
   // Position near the anchor element
   const rect = anchorEl.getBoundingClientRect();
@@ -271,23 +267,45 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false, w
     tabEl.draggable = true;
   }
   
-   // Build window label HTML if provided (for recency view)
-   const windowLabelHtml = windowLabel ? `<span class="tab-window-label">${escapeHtml(windowLabel)}</span>` : '';
 
-   // Only show age label if there's a timestamp
-   const ageLabelHtml = ageInfo.label ? `<span class="tab-age ${ageInfo.className}">${ageInfo.label}</span>` : '';
+  // untrusted input is sanitized in various places, age stuff is internal and safe
+  const favIcon = document.createElement("img");
+  favIcon.className = "tab-favicon";
+  favIcon.src = getFaviconUrl(tab);
+  favIcon.alt = "";
+  favIcon.onerror = function() {
+    this.src = 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22%23666%22><rect width=%2224%22 height=%2224%22 rx=%224%22/></svg>';
+  };
+  tabEl.appendChild(favIcon);
+  const tabInfo = document.createElement("div");
+  tabInfo.className = "tab-info";
+  const title = document.createElement("div");
+  title.className = "tab-title";
+  title.textContent = tab.title || "Untitled";
+  const url = document.createElement("div");
+  url.className = "tab-url";
+  url.textContent = tab.url || "";
+  tabInfo.append(title, url);
 
-   // untrusted input is sanitized in various places, age stuff is internal and safe
-   tabEl.innerHTML = `
-     <img class="tab-favicon" src="${escapeHtml(getFaviconUrl(tab))}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22%23666%22><rect width=%2224%22 height=%2224%22 rx=%224%22/></svg>'">
-     <div class="tab-info">
-       <div class="tab-title">${escapeHtml(tab.title || 'Untitled')}</div>
-       <div class="tab-url">${escapeHtml(tab.url || '')}</div>
-     </div>
-     ${windowLabelHtml}
-     ${ageLabelHtml}
-     <button class="delete-btn" title="Close tab">✕</button>
-   `;
+  tabEl.appendChild(tabInfo);
+  if (windowLabel) {
+    // recency view
+    const windowLabelHtml = document.createElement("span");
+    windowLabelHtml.className = "tab-window-label";
+    windowLabelHtml.textContent = windowLabel;
+    tabEl.appendChild(windowLabelHtml);
+  }
+  if (ageInfo.label) {
+    const ageLabelHtml = document.createElement("span");
+    ageLabelHtml.className = `tab-age ${ageInfo.className}`;
+    ageLabelHtml.textContent = ageInfo.label;
+    tabEl.appendChild(ageLabelHtml);
+  }
+  const deleteBtn = document.createElement("button");
+  deleteBtn.className = "delete-btn";
+  deleteBtn.title = "Close tab";
+  deleteBtn.textContent = "✕";
+  tabEl.appendChild(deleteBtn);
   
   // Click on tab to switch to it
   tabEl.addEventListener('click', async (e) => {
@@ -302,8 +320,6 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false, w
     }
   });
   
-  // Delete button
-  const deleteBtn = tabEl.querySelector('.delete-btn');
   deleteBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     
@@ -605,7 +621,10 @@ async function loadTabs(preserveScroll = true) {
   // Save scroll position before reload
   const scrollY = preserveScroll ? window.scrollY : 0;
 
-  tabListEl.innerHTML = '<div class="loading">Loading tabs...</div>';
+  const loading = document.createElement("div");
+  loading.className = "loading";
+  loading.textContent = "Loading tabs...";
+  tabListEl.appendChild(loading);
 
   try {
     const [tabs, storageData] = await Promise.all([
@@ -626,12 +645,20 @@ async function loadTabs(preserveScroll = true) {
     const filteredTabs = tabs.filter(tab => tab.id !== currentTab?.id && !tab.pinned);
 
     if (filteredTabs.length === 0) {
-      tabListEl.innerHTML = `
-        <div class="empty-state">
-          <h2>No other tabs open</h2>
-          <p>Open some tabs and come back here to organize them!</p>
-        </div>
-      `;
+      tabListEl.textContent = "";
+
+      const emptyStateDiv = document.createElement("div");
+      emptyStateDiv.className = "empty-state";
+
+      const h2 = document.createElement("h2");
+      h2.textContent = "No other tabs open";
+
+      const p = document.createElement("p");
+      p.textContent = "Open some tabs and come back here to organize them!";
+
+      emptyStateDiv.append(h2, p);
+
+      tabListEl.appendChild(emptyStateDiv);
       tabCountEl.textContent = '0 tabs';
       return;
     }
@@ -642,7 +669,7 @@ async function loadTabs(preserveScroll = true) {
       timestamp: timestamps[tab.id] ?? 0
     }));
 
-    tabListEl.innerHTML = '';
+    tabListEl.textContent = '';
 
     if (currentView === 'recency') {
       await renderRecencyView(tabsWithTimestamps);
@@ -661,13 +688,18 @@ async function loadTabs(preserveScroll = true) {
 
   } catch (err) {
     console.error('Failed to load tabs:', err);
-    // dynamic content escaped using escapeHtml
-    tabListEl.innerHTML = `
-      <div class="empty-state">
-        <h2>Error loading tabs</h2>
-        <p>${escapeHtml(err.message)}</p>
-      </div>
-    `;
+    const emptyStateDiv = document.createElement("div");
+    emptyStateDiv.className = "empty-state";
+
+    const h2 = document.createElement("h2");
+    h2.textContent = "Error loading tabs";
+
+    const p = document.createElement("p");
+    p.textContent = err.message;
+
+    emptyStateDiv.append(h2, p);
+
+    tabListEl.appendChild(emptyStateDiv);
   } finally {
     isLoading = false;
 
@@ -768,15 +800,29 @@ async function renderWindowView(tabsWithTimestamps) {
 
     const isCurrentWindow = windowId === currentWindowId;
     const headerLabel = isCurrentWindow ? `Window ${windowNumber} (Current)` : `Window ${windowNumber}`;
-    // dynamic values are all internally generated, secure
-    windowEl.innerHTML = `
-      <div class="window-header">
-        <span class="window-header-icon">🪟</span>
-        <span>${headerLabel}</span>
-        <span style="color: #666; margin-left: auto;">${tabs.length} tab${tabs.length !== 1 ? 's' : ''}</span>
-      </div>
-      <div class="window-tabs"></div>
-    `;
+    windowEl.textContent = ""; // Clear existing content
+
+    const windowHeader = document.createElement("div");
+    windowHeader.className = "window-header";
+
+    const iconSpan = document.createElement("span");
+    iconSpan.className = "window-header-icon";
+    iconSpan.textContent = "🪟";
+
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = headerLabel;
+
+    const countSpan = document.createElement("span");
+    countSpan.style.color = "#666";
+    countSpan.style.marginLeft = "auto";
+    countSpan.textContent = `${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`;
+
+    windowHeader.append(iconSpan, labelSpan, countSpan);
+
+    const windowTabs = document.createElement("div");
+    windowTabs.className = "window-tabs";
+
+    windowEl.append(windowHeader, windowTabs);
 
     const windowTabsEl = windowEl.querySelector('.window-tabs');
 
@@ -881,14 +927,33 @@ function createTabGroupElement(groupInfo, windowId) {
   const title = groupInfo.title || 'Unnamed Group';
 
   // dynamic values are escaped or internally created and secure
-  groupEl.innerHTML = `
-    <div class="tab-group-header" style="border-left-color: ${colorValue}">
-      <button class="tab-group-color" style="background: ${colorValue}" title="Change color" data-color="${color}"></button>
-      <span class="tab-group-name" title="Click to rename">${escapeHtml(title)}</span>
-      <span class="tab-group-count"></span>
-    </div>
-    <div class="tab-group-tabs" style="border-left-color: ${colorValue}"></div>
-  `;
+  groupEl.textContent = ""; // Clear existing content
+
+  const groupHeader = document.createElement("div");
+  groupHeader.className = "tab-group-header";
+  groupHeader.style.borderLeftColor = colorValue;
+
+  const colorButton = document.createElement("button");
+  colorButton.className = "tab-group-color";
+  colorButton.style.background = colorValue;
+  colorButton.title = "Change color";
+  colorButton.dataset.color = color;
+
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "tab-group-name";
+  nameSpan.title = "Click to rename";
+  nameSpan.textContent = title;
+
+  const countSpan = document.createElement("span");
+  countSpan.className = "tab-group-count";
+
+  groupHeader.append(colorButton, nameSpan, countSpan);
+
+  const groupTabs = document.createElement("div");
+  groupTabs.className = "tab-group-tabs";
+  groupTabs.style.borderLeftColor = colorValue;
+
+  groupEl.append(groupHeader, groupTabs);
 
   // Make group header draggable
   const headerEl = groupEl.querySelector('.tab-group-header');
