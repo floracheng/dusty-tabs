@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Dusty Tabs",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Surface forgotten tabs and organize by recency or window. See which tabs are collecting dust.",
  
   "browser_specific_settings": {

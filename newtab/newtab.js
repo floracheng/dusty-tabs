@@ -195,6 +195,7 @@ function showColorPicker(groupId, currentColor, anchorEl) {
   const picker = document.createElement('div');
   picker.className = 'color-picker-popup';
 
+  // injected variables are all known hardcoded strings, safe to use
   picker.innerHTML = TAB_GROUP_COLORS.map(color => `
     <button class="color-option ${color === currentColor ? 'selected' : ''}"
             data-color="${color}"
@@ -271,11 +272,12 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false, w
   }
   
    // Build window label HTML if provided (for recency view)
-   const windowLabelHtml = windowLabel ? `<span class="tab-window-label">${windowLabel}</span>` : '';
+   const windowLabelHtml = windowLabel ? `<span class="tab-window-label">${escapeHtml(windowLabel)}</span>` : '';
 
    // Only show age label if there's a timestamp
    const ageLabelHtml = ageInfo.label ? `<span class="tab-age ${ageInfo.className}">${ageInfo.label}</span>` : '';
 
+   // untrusted input is sanitized in various places, age stuff is internal and safe
    tabEl.innerHTML = `
      <img class="tab-favicon" src="${escapeHtml(getFaviconUrl(tab))}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22%23666%22><rect width=%2224%22 height=%2224%22 rx=%224%22/></svg>'">
      <div class="tab-info">
@@ -659,6 +661,7 @@ async function loadTabs(preserveScroll = true) {
 
   } catch (err) {
     console.error('Failed to load tabs:', err);
+    // dynamic content escaped using escapeHtml
     tabListEl.innerHTML = `
       <div class="empty-state">
         <h2>Error loading tabs</h2>
@@ -765,7 +768,7 @@ async function renderWindowView(tabsWithTimestamps) {
 
     const isCurrentWindow = windowId === currentWindowId;
     const headerLabel = isCurrentWindow ? `Window ${windowNumber} (Current)` : `Window ${windowNumber}`;
-
+    // dynamic values are all internally generated, secure
     windowEl.innerHTML = `
       <div class="window-header">
         <span class="window-header-icon">🪟</span>
@@ -877,6 +880,7 @@ function createTabGroupElement(groupInfo, windowId) {
   const colorValue = getGroupColorValue(color);
   const title = groupInfo.title || 'Unnamed Group';
 
+  // dynamic values are escaped or internally created and secure
   groupEl.innerHTML = `
     <div class="tab-group-header" style="border-left-color: ${colorValue}">
       <button class="tab-group-color" style="background: ${colorValue}" title="Change color" data-color="${color}"></button>
