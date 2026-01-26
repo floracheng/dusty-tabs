@@ -190,9 +190,9 @@ function showColorPicker(groupId, currentColor, anchorEl) {
   picker.className = 'color-picker-popup';
 
   // injected variables are all known hardcoded strings, safe to use
-  picker.append(TAB_GROUP_COLORS.map(color => {
+  picker.append(...TAB_GROUP_COLORS.map(color => {
     const colorBtn = document.createElement("button")
-    colorBtn.className = "color-option ${color === currentColor ? 'selected' : ''}";
+    colorBtn.className = `color-option ${color === currentColor ? 'selected' : ''}`;
     colorBtn.dataset.color = color;
     colorBtn.style.background = TAB_GROUP_COLOR_VALUES[color];
     colorBtn.title = color;
@@ -478,8 +478,12 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false, w
         const groupId = parseInt(draggedGroup.dataset.groupId);
         const targetWindowId = parseInt(tabEl.dataset.windowId);
         const targetIndex = parseInt(tabEl.dataset.index);
+        const rect = tabEl.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const insertAfter = e.clientY >= midY;
+        const adjustedIndex = insertAfter ? targetIndex + 1 : targetIndex;
         try {
-          await moveTabGroup(groupId, targetWindowId, targetIndex);
+          await moveTabGroup(groupId, targetWindowId, adjustedIndex);
           loadTabs();
         } catch (err) {
           console.error('Failed to move group:', err);
