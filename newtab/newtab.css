@@ -30,7 +30,6 @@ h1 {
 
 .header-controls {
   display: flex;
-  justify-content: center;
   align-items: center;
   gap: 1.5rem;
   flex-wrap: wrap;
@@ -66,6 +65,35 @@ h1 {
 .stats {
   font-size: 0.9rem;
   color: #aaa;
+}
+
+.search-input {
+  background: #252542 url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%23666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>') no-repeat 12px center;
+  border: 1px solid #3a3a5c;
+  border-radius: 20px;
+  padding: 0.6rem 1.25rem 0.6rem 2.25rem;
+  font-size: 0.9rem;
+  color: #eee;
+  width: 220px;
+  margin-left: auto;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.search-input::placeholder {
+  color: #666;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #6c8aff;
+  box-shadow: 0 0 0 2px rgba(108, 138, 255, 0.2);
+}
+
+.search-highlight {
+  background: #FF69B4;
+  color: #000;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 
 .tab-list {

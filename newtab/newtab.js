@@ -4,9 +4,16 @@ const tabListEl = document.getElementById('tab-list');
 const tabCountEl = document.getElementById('tab-count');
 const viewRecencyBtn = document.getElementById('view-recency');
 const viewWindowBtn = document.getElementById('view-window');
+const searchInput = document.getElementById('search-input');
 
 // Current view mode: 'recency' or 'window'
 let currentView = 'recency';
+
+// Search state
+let searchQuery = '';
+let totalTabCount = 0;
+let cachedTabsWithTimestamps = null;
+let searchRenderTimer = null;
 
 // Time constants in milliseconds
 const MINUTE = 60 * 1000;
@@ -185,6 +192,43 @@ function getGroupColorValue(color) {
   return TAB_GROUP_COLOR_VALUES[color] || TAB_GROUP_COLOR_VALUES.grey;
 }
 
+// Search helper functions
+function tabMatchesSearch(tab, query) {
+  if (!query) return true;
+  const lowerQuery = query.toLowerCase();
+  const title = (tab.title || '').toLowerCase();
+  const url = (tab.url || '').toLowerCase();
+  return title.includes(lowerQuery) || url.includes(lowerQuery);
+}
+
+function highlightText(text, query) {
+  if (!query) return document.createTextNode(text);
+
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const index = lowerText.indexOf(lowerQuery);
+
+  if (index === -1) return document.createTextNode(text);
+
+  const fragment = document.createDocumentFragment();
+
+  if (index > 0) {
+    fragment.appendChild(document.createTextNode(text.substring(0, index)));
+  }
+
+  const highlight = document.createElement('span');
+  highlight.className = 'search-highlight';
+  highlight.textContent = text.substring(index, index + query.length);
+  fragment.appendChild(highlight);
+
+  if (index + query.length < text.length) {
+    const rest = highlightText(text.substring(index + query.length), query);
+    fragment.appendChild(rest);
+  }
+
+  return fragment;
+}
+
 function showColorPicker(groupId, currentColor, anchorEl) {
   // Remove any existing color picker
   const existing = document.querySelector('.color-picker-popup');
@@ -285,10 +329,10 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false, w
   tabInfo.className = "tab-info";
   const title = document.createElement("div");
   title.className = "tab-title";
-  title.textContent = tab.title || "Untitled";
+  title.appendChild(highlightText(tab.title || "Untitled", searchQuery));
   const url = document.createElement("div");
   url.className = "tab-url";
-  url.textContent = tab.url || "";
+  url.appendChild(highlightText(tab.url || "", searchQuery));
   tabInfo.append(title, url);
 
   tabEl.appendChild(tabInfo);
@@ -605,10 +649,51 @@ function createTabElement(tab, timestamp, isActive = false, draggable = false, w
   return tabEl;
 }
 
+async function renderFilteredTabs() {
+  if (!cachedTabsWithTimestamps) return;
+
+  let tabsWithTimestamps = cachedTabsWithTimestamps;
+
+  // Apply search filter
+  if (searchQuery) {
+    tabsWithTimestamps = tabsWithTimestamps.filter(({ tab }) => tabMatchesSearch(tab, searchQuery));
+
+    if (tabsWithTimestamps.length === 0) {
+      const emptyStateDiv = document.createElement("div");
+      emptyStateDiv.className = "empty-state";
+
+      const h2 = document.createElement("h2");
+      h2.textContent = "No dust here - try another search";
+
+      emptyStateDiv.appendChild(h2);
+
+      tabListEl.replaceChildren(emptyStateDiv);
+      updateTabCount();
+      return;
+    }
+  }
+
+  // Build content in a temp container first, then swap in
+  const tempContainer = document.createElement('div');
+
+  if (currentView === 'recency') {
+    await renderRecencyView(tabsWithTimestamps, tempContainer);
+  } else {
+    await renderWindowView(tabsWithTimestamps, tempContainer);
+  }
+
+  // Swap content in one operation
+  tabListEl.replaceChildren(...tempContainer.childNodes);
+
+  updateTabCount();
+}
+
 function updateTabCount() {
   const count = tabListEl.querySelectorAll('.tab-item').length;
-  
-  if (currentView === 'window') {
+
+  if (searchQuery) {
+    tabCountEl.textContent = `${count} of ${totalTabCount} tab${totalTabCount !== 1 ? 's' : ''}`;
+  } else if (currentView === 'window') {
     const windowCount = tabListEl.querySelectorAll('.window-group').length;
     tabCountEl.textContent = `${count} tab${count !== 1 ? 's' : ''} across ${windowCount} window${windowCount !== 1 ? 's' : ''}`;
   } else {
@@ -616,7 +701,7 @@ function updateTabCount() {
   }
 }
 
-async function loadTabs(preserveScroll = true) {
+async function loadTabs(preserveScroll = true, showLoading = true) {
   // Prevent concurrent loads - queue a reload if already loading
   if (isLoading) {
     pendingLoad = true;
@@ -629,10 +714,12 @@ async function loadTabs(preserveScroll = true) {
   // Save scroll position before reload
   const scrollY = preserveScroll ? window.scrollY : 0;
 
-  const loading = document.createElement("div");
-  loading.className = "loading";
-  loading.textContent = "Loading tabs...";
-  tabListEl.appendChild(loading);
+  if (showLoading) {
+    const loading = document.createElement("div");
+    loading.className = "loading";
+    loading.textContent = "Loading tabs...";
+    tabListEl.appendChild(loading);
+  }
 
   try {
     const [tabs, storageData] = await Promise.all([
@@ -651,6 +738,9 @@ async function loadTabs(preserveScroll = true) {
     // Filter out pinned tabs and current new tab page
     const currentTab = await browser.tabs.getCurrent();
     const filteredTabs = tabs.filter(tab => tab.id !== currentTab?.id && !tab.pinned);
+
+    // Store total count for search display
+    totalTabCount = filteredTabs.length;
 
     if (filteredTabs.length === 0) {
       tabListEl.textContent = "";
@@ -671,21 +761,13 @@ async function loadTabs(preserveScroll = true) {
       return;
     }
 
-    // Add timestamps to tabs
-    const tabsWithTimestamps = filteredTabs.map(tab => ({
+    // Add timestamps to tabs and cache
+    cachedTabsWithTimestamps = filteredTabs.map(tab => ({
       tab,
       timestamp: timestamps[tab.id] ?? 0
     }));
 
-    tabListEl.textContent = '';
-
-    if (currentView === 'recency') {
-      await renderRecencyView(tabsWithTimestamps);
-    } else {
-      await renderWindowView(tabsWithTimestamps);
-    }
-
-    updateTabCount();
+    await renderFilteredTabs();
 
     // Restore scroll position after DOM is fully rendered
     if (preserveScroll && scrollY > 0) {
@@ -718,11 +800,11 @@ async function loadTabs(preserveScroll = true) {
   }
 }
 
-async function renderRecencyView(tabsWithTimestamps) {
+async function renderRecencyView(tabsWithTimestamps, container = tabListEl) {
   // Build window number map first
   windowNumberMap.clear();
   const windowIds = [...new Set(tabsWithTimestamps.map(t => t.tab.windowId))];
-  
+
   // Get current window to show first
   let currentWindowId;
   try {
@@ -731,29 +813,29 @@ async function renderRecencyView(tabsWithTimestamps) {
   } catch (e) {
     currentWindowId = null;
   }
-  
+
   // Sort window IDs so current window is first
   windowIds.sort((a, b) => {
     if (a === currentWindowId) return -1;
     if (b === currentWindowId) return 1;
     return a - b;
   });
-  
+
   windowIds.forEach((id, idx) => {
     windowNumberMap.set(id, `Window ${idx + 1}`);
   });
-  
+
   // Sort by timestamp descending (most recent first)
   tabsWithTimestamps.sort((a, b) => b.timestamp - a.timestamp);
-  
+
   for (const { tab, timestamp } of tabsWithTimestamps) {
     const windowLabel = windowNumberMap.get(tab.windowId);
     const tabEl = createTabElement(tab, timestamp, false, false, windowLabel);
-    tabListEl.appendChild(tabEl);
+    container.appendChild(tabEl);
   }
 }
 
-async function renderWindowView(tabsWithTimestamps) {
+async function renderWindowView(tabsWithTimestamps, container = tabListEl) {
   // Group tabs by window
   const windowGroups = new Map();
 
@@ -919,7 +1001,7 @@ async function renderWindowView(tabsWithTimestamps) {
       }
     }
 
-    tabListEl.appendChild(windowEl);
+    container.appendChild(windowEl);
     windowNumber++;
   }
 }
@@ -1090,6 +1172,34 @@ async function setView(view) {
 // View toggle event listeners
 viewRecencyBtn.addEventListener('click', () => setView('recency'));
 viewWindowBtn.addEventListener('click', () => setView('window'));
+
+// Search event listeners
+searchInput.addEventListener('input', (e) => {
+  searchQuery = e.target.value;
+  if (searchRenderTimer) {
+    clearTimeout(searchRenderTimer);
+  }
+  searchRenderTimer = setTimeout(() => {
+    renderFilteredTabs();
+  }, 100);
+});
+
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    searchQuery = '';
+    searchInput.value = '';
+    searchInput.blur();
+    renderFilteredTabs();
+  }
+});
+
+// Keyboard shortcut: Ctrl+F to focus search
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    e.preventDefault();
+    searchInput.focus();
+  }
+});
 
 // Initial load (don't preserve scroll on first load)
 loadTabs(false);
